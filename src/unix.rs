@@ -6,8 +6,6 @@ use std::{
     process::Command,
 };
 
-use crate::{CommandExt, IntoResult};
-
 pub fn that<T: AsRef<OsStr>>(path: T) -> io::Result<()> {
     let path = path.as_ref();
     let open_handlers = [
@@ -18,36 +16,25 @@ pub fn that<T: AsRef<OsStr>>(path: T) -> io::Result<()> {
         ("wslview", &[&wsl_path(path)]),
     ];
 
-    let mut unsuccessful = None;
     let mut io_error = None;
 
     for (command, args) in &open_handlers {
-        let result = Command::new(command).args(*args).status_without_output();
+        let result = Command::new(command).args(*args).spawn();
 
         match result {
-            Ok(status) if status.success() => return Ok(()),
-            Ok(status) => {
-                unsuccessful = unsuccessful.or_else(|| {
-                    Some(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        status.to_string(),
-                    ))
-                })
-            }
-            Err(err) => io_error = io_error.or(Some(err)),
+            Ok(_) => return Ok(()),
+            Err(e) => io_error = Some(e),
         }
     }
 
-    Err(unsuccessful
-        .or(io_error)
-        .expect("successful cases don't get here"))
+    Err(io_error.expect("successful cases don't get here"))
 }
 
 pub fn with<T: AsRef<OsStr>>(path: T, app: impl Into<String>) -> io::Result<()> {
     Command::new(app.into())
         .arg(path.as_ref())
-        .status_without_output()
-        .into_result()
+        .spawn()
+        .map(|_| ())
 }
 
 // Polyfill to workaround absolute path bug in wslu(wslview). In versions before
